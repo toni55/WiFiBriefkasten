@@ -4,6 +4,9 @@
 #include <PubSubClient.h> // Nick O'Leary (https://pubsubclient.knolleary.net/)
 #include <EEPROM.h>
 
+// Version
+#define VERSION 1
+
 // Eingaenge
 #define TUER 4
 #define KLAPPE 5
@@ -54,6 +57,7 @@ String getPayloadString(int raw, float akku, int signal, int klappe, int tuer, i
   String payload;
 
   payload = "{";
+  payload += "\"Firmware\":" + String(VERSION) + ",";
   payload += "\"Raw\":" + String(raw) + ",";
   payload += "\"Akku\":" + String(akku) + ",";
   payload += "\"Signal\":" + String(signal) + ",";
