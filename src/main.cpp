@@ -19,8 +19,8 @@ const char *mqtt_server = "192.168.xxx.xxx";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-int geoeffnetcnt = 0;   // Zaehler fuer die Anzahl von Klappenoeffnungen
-boolean offen = false;  // ist die Klappe oder Tuer offen?
+volatile uint8 geoeffnetcnt = 0; // Zaehler fuer die Anzahl von Klappenoeffnungen
+boolean offen = false;           // ist die Klappe oder Tuer offen?
 uint8 klappe = 0;
 uint8 tuer = 0;
 uint8 post = 0;
@@ -32,10 +32,10 @@ void setup_wifi()
   WiFi.hostname("briefkasten");
   WiFi.begin(ssid, password);
 
-// mit lokalem Netzwerk verbinden
+  // mit lokalem Netzwerk verbinden
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    delay(100);
   }
 }
 
@@ -46,7 +46,7 @@ void reconnect()
   {
     if (!client.connect("BriefkastenClient"))
     {
-      delay(500);
+      delay(100);
     }
   }
 }
@@ -70,7 +70,7 @@ String getPayloadString(int raw, float akku, int signal, int klappe, int tuer, i
   return payload;
 }
 
-void init()
+void myinit()
 {
   pinMode(TUER, INPUT_PULLUP);
   pinMode(KLAPPE, INPUT_PULLUP);
@@ -80,15 +80,15 @@ void init()
   tuer = !digitalRead(TUER);
   klappe = !digitalRead(KLAPPE);
 
+  // EEPROM initialisieren
+  EEPROM.begin(3);
+
   // falls die Klappe geoeffnet ist nach kurzer Zeit noch mal abfragen (als debounce)
   if (klappe)
   {
     delay(20);
     klappe = (!digitalRead(KLAPPE));
   }
-
-  // EEPROM initialisieren
-  EEPROM.begin(3);
 
   // mit Wlan verbinden
   setup_wifi();
@@ -108,7 +108,7 @@ void init()
 
   // bei geloeschtem EEPROM ist alles auf 0xff
   // dann werden die Werte mit 0x00 Initialisiert
-  boolean firstrun = EEPROM.read(2);
+  uint8 firstrun = EEPROM.read(2);
   if (firstrun != 0)
   {
     EEPROM.write(0, 0);
@@ -120,23 +120,18 @@ void init()
 
 void setup()
 {
-  init();
+  myinit();
 
   // Akkuspannung einlesen
   // !!! ACHTUNG !!! Spannungteiler anpassen (R5, R6)
   int raw = analogRead(A0);
-  float volt = raw * (4.3 / 1023.0);
+  float volt = raw * (4.2 / 1023.0);
 
   // wenn die Klappe geoeffnet wurde wird angenommen das Post da ist
-  post = klappe;
-
-  // wenn die Tuer geoeffnet wird: Post wieder auf 0 setzen
-  if (tuer)
-  {
-    post = 0;
-  }
-
+  post = klappe || EEPROM.read(1) > 0;
   offen = klappe || tuer;
+
+  geoeffnetcnt = EEPROM.read(1);
 
   // Payload zum MQTT-Server schicken
   client.publish("briefkasten/status", getPayloadString(raw, volt, WiFi.RSSI(), klappe, tuer, post, geoeffnetcnt).c_str(), true);
@@ -151,6 +146,7 @@ void setup()
       geoeffnetcnt++;
       EEPROM.write(1, geoeffnetcnt);
       EEPROM.commit();
+      delay(2000);
     }
   }
 
@@ -161,6 +157,7 @@ void setup()
     EEPROM.write(1, 0);
     EEPROM.commit();
     geoeffnetcnt = 0;
+    post = 0;
   }
 
   // solange die Klappe oder Tuer geoeffnet ist wird gewartet
@@ -183,7 +180,7 @@ void setup()
   delay(10);
 
   ESP.deepSleep(60 * 60e6); // 60e6 = 1 Minute * 60 = 1 Stunde
-  delay(200);  // dem ESP noch etwas Zeit geben um in den DeepSleep zu wechseln
+  delay(200);               // dem ESP noch etwas Zeit geben um in den DeepSleep zu wechseln
 }
 
 // die LOOP wird nicht benoetigt
